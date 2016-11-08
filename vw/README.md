@@ -8,13 +8,26 @@ We use this learner so much that we feel strong integration with VW is very
 important.  Considering that Vowpal Wabbit does not support hyperparameter
 optimization out of the box, we've taken steps to support it.
 
-The hyperparameter space that is searched over in VW includes but is not
-limited to the namespaces, the learning rate, l1, l2.
-
 Support for K-Fold cross validation has been included by implementing
 an objective function that searches over your defined hyperparameter
 space.  Spark acts as the distributed computation framework responsible
 for parallelizing VW execution on nodes.
+
+The hyperparameter space that is searched over in VW includes but is not
+limited to the namespaces, the learning rate, l1, l2.  In fact, you
+can search over any parameter of your choice, as long as the space
+of the parameter can be properly defined within Spotz.  The parameter
+names are the same as the command line arguments passed to VW.
+
+For example to search within the learning rate space between 0 and 1, 'l'
+specifies the learning rate as if you had passed that same parameter name
+to VW on the command line.
+
+```scala
+val space = Map(
+  ("l",  UniformDouble(0, 1))
+)
+```
 
 ## Maven dependency
 
