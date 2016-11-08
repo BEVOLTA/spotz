@@ -11,8 +11,10 @@ optimization out of the box, we've taken steps to support it.
 The hyperparameter space that is searched over in VW includes but is not
 limited to the namespaces, the learning rate, l1, l2.
 
-Support for K-Fold cross validation has also been included by implementing
-an objective function that 
+Support for K-Fold cross validation has been included by implementing
+an objective function that searches over your defined hyperparameter
+space.  Spark acts as the distributed computation framework responsible
+for parallelizing VW execution on nodes.
 
 ## Maven dependency
 
@@ -26,38 +28,27 @@ To use this as part of a maven build
 <dependency>
 ```
 
-## Usage
-
-Using this framework consists of writing the following boilerplate code:
-
-1. Import the default definitions from the spotz ```Preamble``` object.
-Importing from a library Preamble is a Scala convention to bring in default
-definitions into the current scope.
-2. Define the objective function.
-3. Define the space of hyperparameter values that you wish to search.
-4. Select the solver.
-
-## Imports
-
-Import the default definitions from the spotz preamble object
+## Example
 
 ```scala
-import com.eharmony.spotz.Preamble._
+val space = Map(
+  ("l",  UniformDouble(0, 1)),
+  ("l2", UniformDouble(0, 0.0005)),
+  ("q",  Combinations(Seq("a", "b", "c"), k = 2, replacement = true))
+)
+
+val stop = StopStrategy.stopAfterMaxTrials(1000)
+val optimizer = new SparkRandomSearch[Point, Double](sc, stop)
+
+val rdd = sc.textFile("file:///path to vw dataset")
+val objective = new SparkVwCrossValidationObjective(
+  sc = sc,
+  numFolds = 10,
+  vwDataset = rdd.toLocalIterator,
+  Option("--passes 20 --cache_file /tmp/vw.cache -k -b 22")
+  None
+)
+val searchResult = optimizer.minimize(objective, space)
+val bestPoint = searchResult.bestPoint
+println(bestPoint)
 ```
-
-## Objective Function Trait
-
-Define your objective function by implementing the ```Objective[P, L]```
-trait.
-
-## Hyperparameter Space
-
-
-## Choose Solver
-
-
-### Stop Strategies
-
-
-## Full Example
-
