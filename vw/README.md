@@ -37,6 +37,11 @@ To use this as part of a maven build
 ```xml
 <dependency>
     <groupId>com.eharmony</groupId>
+    <artifactId>spotz-core</artifactId>
+    <version>1.0.1</version>
+<dependency>
+<dependency>
+    <groupId>com.eharmony</groupId>
     <artifactId>spotz-vw</artifactId>
     <version>1.0.1</version>
 <dependency>
@@ -76,15 +81,14 @@ file is used for testing.  These cache files are distributed
 through Spark onto the worker nodes participating in
 the Spark job.  For a single K fold cross validation run,
 sampled hyperparameters from the defined space are used as
-arguments to VW.  A model is trained using the training
-parameters specified by the caller and the sampled hyperparameters
-on the training cache file.  Subsequently, this model is used on the
-test set cache file to compute a loss for this fold.  There are K
-training and test runs of VW using the same sampled hyperparameters,
-one training and test run for each fold.  The test losses for all folds
-are averaged to compute a single loss for the entire K fold cross 
-validation run.  Spotz will keep track of this loss and its respective
-sampled hyperparameters.
+arguments to VW.  On the training cache file, a model is trained with the
+parameters specified by the caller and the sampled hyperparameters.  
+Subsequently, this model is used with the test set cache file to compute a
+loss for this fold.  There are K training and test runs of VW using the 
+same sampled hyperparameters, one training and test run for each fold.  
+The test losses for all folds are averaged to compute a single loss for 
+the entire K fold cross validation run.  Spotz will keep track of this 
+loss and its respective sampled hyperparameters.
 
 Repeat this K fold cross validation process with newly sampled
 hyperparameter values and a newly computed loss for as many trials 
@@ -97,5 +101,41 @@ it will default to 18.  Additionally, Spotz will control any VW
 arguments related to caching and cleanup on the distributed Spark
 workers.  The caller need only be concerned about the bit precision.
 Specifying any arguments in the training parameter string related to
-caching will be ignored except for "```-b```".
+caching will be manually filtered out by Spotz except for "```-b```".
+
+To search over namespaces, using ```Combinations``` and ```Subsets```
+sampling functions with VW arguments ```q```,```cubic```, and
+```interactions``` is important.
+
+## Random Search Space
+
+This will define a space to allow sampling namespace combinations of 2
+from the sequence of namespaces ```a```,```b```,```c```.  The combination
+is generated randomly.  Two namespaces will then be passed to VW with
+```-q``` argument.  VW can then interact the features of the two 
+namespaces in the combination.
+
+```scala
+val space = Map( 
+  ("q",  Combinations(Seq("a", "b", "c"), k = 2))
+)
+```
+
+This required using the ```SparkRandomSearch``` or ```ParRandomSearch```
+optimizer.
+
+## Grid Search Space
+
+The same space though searched in an ordered manner with grid search is
+defined as follows.  The value of the Map is an iterable and not a
+sampling function.
+
+```scala
+val space = Map(
+  ("q", Seq("a", "b", "c").combinations(2).toIterable)
+)
+```
+
+This requires using a ```SparkGridSearch``` or ```ParGridSearch```
+optimizer.
 
