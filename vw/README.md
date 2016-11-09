@@ -3,9 +3,12 @@
 
 At [eHarmony](http://www.eharmony.com), we make heavy use of
 [Vowpal Wabbit](https://github.com/JohnLangford/vowpal_wabbit/wiki).
-We use this learner so much that we feel strong integration with VW is very
-important.  Considering that Vowpal Wabbit does not support hyperparameter
-optimization out of the box, we've taken steps to support it.
+We use this learner so much that we feel strong Spark integration with VW
+is very important.  Considering that Vowpal Wabbit does not support 
+hyperparameter optimization out of the box, we've taken steps to support it.
+
+A prerequisite is that VW is of course installed on all Spark worker
+nodes.
 
 Support for K-Fold cross validation has been included by implementing
 an objective function that searches over your defined hyperparameter
@@ -17,17 +20,6 @@ limited to the namespaces, the learning rate, l1, l2, etc.  In fact, you
 can search over any parameter of your choice, as long as the space
 of the parameter can be properly defined within Spotz.  The parameter
 names are the same as the command line arguments passed to VW.
-
-For example to perform random search within the learning rate space 
-between 0 and 1, 'l' specifies the learning rate as if you had passed
-that same parameter name to VW on the command line.  
-
-```scala
-val space = Map(
-  ("l",  UniformDouble(0, 1))
-  ("q",  Combinations(Seq("a", "b", "c"), k = 2, replacement = true))
-)
-```
 
 ## Maven dependency
 
@@ -45,6 +37,7 @@ To use this as part of a maven build
     <version>1.0.1</version>
 <dependency>
 ```
+
 
 ## Example
 
@@ -122,6 +115,17 @@ sampling functions with VW arguments ```q```,```cubic```, and
 
 ## Random Search Space
 
+For example to define a random search with the learning rate range
+between 0 and 1, define a Map where the key "l" specifies the learning
+rate as if you had passed that same parameter name to VW on the command line.  
+The value is a Spotz sampling function.
+
+```scala
+val space = Map(
+  ("l",  UniformDouble(0, 1))
+)
+```
+
 This will define a space to allow sampling namespace combinations of 2
 from the sequence of namespaces ```a```,```b```,```c```.  The combination
 is generated randomly.  Two namespaces will then be passed to VW with
@@ -134,17 +138,18 @@ val space = Map(
 )
 ```
 
-This required using the ```SparkRandomSearch``` or ```ParRandomSearch```
+This requires using the ```SparkRandomSearch``` or ```ParRandomSearch```
 optimizer.
 
 ## Grid Search Space
 
-The same space though searched in an ordered manner with grid search is
+The same space searched in an ordered manner with grid search is
 defined as follows.  The value of the Map is an iterable and not a
 sampling function.
 
 ```scala
 val space = Map(
+  ("l", Range.Double(0, 1, 0.01)),
   ("q", Seq("a", "b", "c").combinations(2).toIterable)
 )
 ```
