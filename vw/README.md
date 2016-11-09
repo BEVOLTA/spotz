@@ -59,8 +59,8 @@ val objective = new SparkVwCrossValidationObjective(
   sc = sc,
   numFolds = 10,
   vwDataset = rdd.toLocalIterator,
-  Option("--passes 20 --cache_file /tmp/vw.cache -k -b 22")
-  None
+  vwTrainParamsString = Option("--passes 20 -b 22"),
+  vwTestParamsString = None
 )
 val searchResult = optimizer.minimize(objective, space)
 val bestPoint = searchResult.bestPoint
@@ -76,14 +76,26 @@ file is used for testing.  These cache files are distributed
 through Spark onto the worker nodes participating in
 the Spark job.  For a single K fold cross validation run,
 sampled hyperparameters from the defined space are used as
-arguments to VW and there are K training and test runs of VW using the same
-same sampled hyperparameters, one training and test run for each fold.
-The test losses for all folds are averaged to compute a single
-loss for the entire K fold cross validation run.  Spotz will keep track of
-this loss and its respective sampled hyperparameters.
+arguments to VW.  A model is trained using the training
+parameters specified by the caller and the sampled hyperparameters
+on the training cache file.  Subsequently, this model is used on the
+test set cache file to compute a loss for this fold.  There are K
+training and test runs of VW using the same sampled hyperparameters,
+one training and test run for each fold.  The test losses for all folds
+are averaged to compute a single loss for the entire K fold cross 
+validation run.  Spotz will keep track of this loss and its respective
+sampled hyperparameters.
 
 Repeat this K fold cross validation process with newly sampled
 hyperparameter values and a newly computed loss for as many trials 
 as necessary until the stop strategy criteria has been fulfilled,
 and finally return the best loss and its respective hyperparameters.
+
+During cache generation, specifying "```-b```" in the objective's
+training param string is important.  If it is not set,
+it will default to 18.  Additionally, Spotz will control any VW
+arguments related to caching and cleanup on the distributed Spark
+workers.  The caller need only be concerned about the bit precision.
+Specifying any arguments in the training parameter string related to
+caching will be ignored except for "```-b```".
 
