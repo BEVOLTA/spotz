@@ -47,17 +47,18 @@ abstract class GridSearch[P, L](
                                  (implicit c: ClassTag[P], p: ClassTag[L]): GridSearchResult[P, L] = {
     val space = new Grid[P](paramSpace)
     val startTime = DateTime.now()
+    /*
     val firstPoint = space(0)
     val firstLoss = objective(firstPoint)
-    val currentTime = DateTime.now()
+    */
 
-    val gridSearchContext = GridSearchContext(
-      bestPointSoFar = firstPoint,
-      bestLossSoFar = firstLoss,
+    val gridSearchContext = GridSearchContext[P, L](
+      bestPointSoFar = None,
+      bestLossSoFar = None,
       startTime = startTime,
-      currentTime = currentTime,
-      trialsSoFar = 1L,
-      optimizerFinished = 1L >= space.size)
+      currentTime = startTime,
+      trialsSoFar = 0L,
+      optimizerFinished = 0L >= space.size)
 
     // Last three arguments maintain the best point and loss and the trial count
     gridSearch(objective, space, reducer, gridSearchContext)
@@ -72,11 +73,11 @@ abstract class GridSearch[P, L](
 
     info(s"Best point and loss after ${gsc.trialsSoFar} trials and ${DurationUtils.format(gsc.elapsedTime)} : ${gsc.bestPointSoFar} loss: ${gsc.bestLossSoFar}")
 
-    if (stopStrategy.shouldStop(gsc)) {
+    if (stopStrategy.shouldStop(gsc) && gsc.bestLossSoFar.isDefined && gsc.bestPointSoFar.isDefined) {
       // Base case, end recursion, return the result
       GridSearchResult[P, L](
-        bestPoint = gsc.bestPointSoFar,
-        bestLoss = gsc.bestLossSoFar,
+        bestPoint = gsc.bestPointSoFar.get,
+        bestLoss = gsc.bestLossSoFar.get,
         startTime = gsc.startTime,
         endTime = gsc.currentTime,
         elapsedTime = gsc.elapsedTime,
@@ -87,12 +88,19 @@ abstract class GridSearch[P, L](
 
       val batchSize = scala.math.min(space.size - gsc.trialsSoFar, trialBatchSize)
 
-      val (bestPoint, bestLoss) = reducer((gsc.bestPointSoFar, gsc.bestLossSoFar), bestGridPointAndLoss(gsc.trialsSoFar, batchSize, objective, space, reducer))
+      val (point, loss) = bestGridPointAndLoss(gsc.trialsSoFar, batchSize, objective, space, reducer)
+
+      val (bestPoint, bestLoss) =
+        if (gsc.bestPointSoFar.isDefined && gsc.bestLossSoFar.isDefined)
+          reducer((gsc.bestPointSoFar.get, gsc.bestLossSoFar.get), (point, loss))
+        else
+          (point, loss)
+
       val trialsSoFar = gsc.trialsSoFar + batchSize
 
       val gridSearchContext = GridSearchContext(
-        bestPointSoFar = bestPoint,
-        bestLossSoFar = bestLoss,
+        bestPointSoFar = Option(bestPoint),
+        bestLossSoFar = Option(bestLoss),
         startTime = gsc.startTime,
         currentTime = currentTime,
         trialsSoFar = trialsSoFar,
@@ -104,8 +112,8 @@ abstract class GridSearch[P, L](
 }
 
 case class GridSearchContext[P, L](
-    bestPointSoFar: P,
-    bestLossSoFar: L,
+    bestPointSoFar: Option[P],
+    bestLossSoFar: Option[L],
     startTime: DateTime,
     currentTime: DateTime,
     trialsSoFar: Long,

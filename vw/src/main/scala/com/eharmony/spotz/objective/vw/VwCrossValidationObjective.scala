@@ -1,22 +1,25 @@
 package com.eharmony.spotz.objective.vw
 
+import java.io.File
+
 import com.eharmony.spotz.Preamble.Point
 import com.eharmony.spotz.objective.Objective
-import com.eharmony.spotz.objective.vw.util.{FSVwDatasetFunctions, SparkVwDatasetFunctions, VwCrossValidation}
-import com.eharmony.spotz.util.{FileUtil, Logging, SparkFileUtil}
+import com.eharmony.spotz.objective.vw.util.VwCrossValidation
+import com.eharmony.spotz.util._
 import org.apache.spark.SparkContext
+import org.apache.spark.rdd.RDD
 
 /**
   * Perform K Fold cross validation given a dataset formatted for Vowpal Wabbit.
   *
   * @param numFolds
-  * @param vwDataset
+  * @param vwDatasetPath
   * @param vwTrainParamsString
   * @param vwTestParamsString
   */
 abstract class AbstractVwCrossValidationObjective(
     val numFolds: Int,
-    @transient val vwDataset: Iterator[String],
+    val vwDatasetPath: String,
     vwTrainParamsString: Option[String],
     vwTestParamsString: Option[String])
   extends Objective[Point, Double]
@@ -24,10 +27,47 @@ abstract class AbstractVwCrossValidationObjective(
   with VwCrossValidation
   with Logging {
 
+  val localMode: Boolean
+
   val vwTrainParamsMap = parseVwArgs(vwTrainParamsString)
   val vwTestParamsMap = parseVwArgs(vwTestParamsString)
 
-  val foldToVwCacheFiles = kFold(vwDataset, numFolds, vwTrainParamsMap)
+  // Gzip VW dataset
+  info(s"Gzip $vwDatasetPath")
+  val gzipVwDatasetFilename = FileUtil.gzip(vwDatasetPath)
+
+  // Save VW dataset to executor or locally
+  info(s"Saving gzipped VW dataset to executors $gzipVwDatasetFilename")
+  val gzippedVwDatasetFilenameOnExecutor = save(gzipVwDatasetFilename)
+
+  // Lazily initialize K-fold if utilizing cluster
+  lazy val lazyFoldToVwCacheFiles = Option(initKFold())
+
+  // Initialize K-fold non-lazily in local mode
+  val nonLazyFoldToVwCacheFiles = {
+    if (localMode) {
+      info("Operating in local mode")
+      val kFoldMap = initKFold()
+      Option(kFoldMap)
+    } else {
+      info("Operating in non-local mode")
+      None
+    }
+  }
+
+  def initKFold(): Map[Int, (String, String)] = {
+    info(s"Retrieving gzipped VW dataset on executor $gzippedVwDatasetFilenameOnExecutor")
+    val file = get(gzippedVwDatasetFilenameOnExecutor)
+
+    val unzippedFilename = FileUtil.gunzip(file.getAbsolutePath)
+    info(s"Unzipped ${file.getAbsolutePath} to $unzippedFilename")
+
+    info(s"Creating K Fold cache files from $unzippedFilename")
+    kFold(unzippedFilename, numFolds, vwTrainParamsMap)
+  }
+
+  def save(filename: String): String
+  def get(filename: String): File
 
   /**
     * This method can run on the driver and/or the executor.  It performs a k-fold cross validation
@@ -44,9 +84,17 @@ abstract class AbstractVwCrossValidationObjective(
     info(s"Vw Training Params: $vwTrainParams")
     info(s"Vw Testing Params: $vwTestParams")
 
+    val foldToVwCacheFiles = if (localMode) {
+      nonLazyFoldToVwCacheFiles
+    } else {
+      lazyFoldToVwCacheFiles
+    }
+
+    assert(foldToVwCacheFiles.isDefined, "Unable to initialize K Fold cross validation")
+
     val avgLosses = (0 until numFolds).map { fold =>
       // Retrieve the training and test set cache for this fold.
-      val (vwTrainFilename, vwTestFilename) = foldToVwCacheFiles(fold)
+      val (vwTrainFilename, vwTestFilename) = foldToVwCacheFiles.get(fold)
       val vwTrainFile = getCache(vwTrainFilename)
       val vwTestFile = getCache(vwTestFilename)
 
@@ -85,48 +133,62 @@ abstract class AbstractVwCrossValidationObjective(
 class SparkVwCrossValidationObjective(
     @transient val sc: SparkContext,
     numFolds: Int,
-    vwDataset: Iterator[String],
+    vwDatasetPath: String,
     vwTrainParamsString: Option[String],
     vwTestParamsString: Option[String])
-  extends AbstractVwCrossValidationObjective(numFolds, vwDataset, vwTrainParamsString, vwTestParamsString)
-  with SparkVwDatasetFunctions {
+  extends AbstractVwCrossValidationObjective(numFolds, vwDatasetPath, vwTrainParamsString, vwTestParamsString)
+  with SparkFileFunctions {
+
+  override lazy val localMode = sc.isLocal
 
   def this(sc: SparkContext,
            numFolds: Int,
-           vwDataset: Iterable[String],
+           vwDatasetIterator: Iterator[String],
            vwTrainParamsString: Option[String],
            vwTestParamsString: Option[String]) = {
-    this(sc, numFolds, vwDataset.toIterator, vwTrainParamsString, vwTestParamsString)
+    this(sc, numFolds, FileUtil.tempFile(vwDatasetIterator).getAbsolutePath, vwTrainParamsString, vwTestParamsString)
   }
 
+
   def this(sc: SparkContext,
            numFolds: Int,
-           vwDatasetPath: String,
+           @transient vwDataset: RDD[String],
            vwTrainParamsString: Option[String],
            vwTestParamsString: Option[String]) = {
-    this(sc, numFolds, SparkFileUtil.loadFile(sc, vwDatasetPath), vwTrainParamsString, vwTestParamsString)
+    this(sc, numFolds, SparkFileUtil.saveToLocalFile(sc, vwDataset), vwTrainParamsString, vwTestParamsString)
+  }
+
+  override def save(filename: String): String = {
+    saveToSparkFiles(filename)
+  }
+
+  override def get(filename: String): File = {
+    getFromSparkFiles(filename)
   }
 }
 
 class VwCrossValidationObjective(
     numFolds: Int,
-    vwDataset: Iterator[String],
+    vwDatasetPath: String,
     vwTrainParamsString: Option[String],
     vwTestParamsString: Option[String])
-  extends AbstractVwCrossValidationObjective(numFolds, vwDataset, vwTrainParamsString, vwTestParamsString)
-    with FSVwDatasetFunctions {
+  extends AbstractVwCrossValidationObjective(numFolds, vwDatasetPath, vwTrainParamsString, vwTestParamsString)
+  with LocalFileSystemFunctions {
+
+  override lazy val localMode = true
 
   def this(numFolds: Int,
-           vwDataset: Iterable[String],
+           vwDatasetIterator: Iterator[String],
            vwTrainParamsString: Option[String],
            vwTestParamsString: Option[String]) = {
-    this(numFolds, vwDataset.toIterator, vwTrainParamsString, vwTestParamsString)
+    this(numFolds, FileUtil.tempFile(vwDatasetIterator).getAbsolutePath, vwTrainParamsString, vwTestParamsString)
   }
 
-  def this(numFolds: Int,
-           vwDatasetPath: String,
-           vwTrainParamsString: Option[String],
-           vwTestParamsString: Option[String]) = {
-    this(numFolds, FileUtil.loadFile(vwDatasetPath), vwTrainParamsString, vwTestParamsString)
+  override def save(filename: String): String = {
+    saveLocally(filename)
+  }
+
+  override def get(filename: String): File = {
+    getLocally(filename)
   }
 }

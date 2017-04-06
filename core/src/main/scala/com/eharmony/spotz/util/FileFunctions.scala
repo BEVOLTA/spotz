@@ -1,6 +1,6 @@
 package com.eharmony.spotz.util
 
-import java.io.{File, PrintWriter}
+import java.io.File
 
 import org.apache.spark.{SparkContext, SparkFiles}
 
@@ -13,22 +13,7 @@ import org.apache.spark.{SparkContext, SparkFiles}
   * Later when the objection function is being parallelized, the file can be retrieved with the
   * <code>get</method> inside the <code>apply</code> method.
   */
-trait FileFunctions {
-  def save(inputPath: String): String = save(FileUtil.loadFile(inputPath))
-
-  def save(inputIterable: Iterable[String]): String = save(inputIterable.toIterator)
-
-  def save(inputIterator: Iterator[String]): String = {
-    val tempFile = FileUtil.tempFile("file.temp")
-    val printWriter = new PrintWriter(tempFile)
-    inputIterator.foreach(line => printWriter.println(line))
-    printWriter.close()
-    save(tempFile)
-  }
-
-  def save(file: File): String
-  def get(name: String): File
-}
+// trait FileSystemFunctions extends LocalFileSystemFunctions with SparkFileFunctions
 
 /**
   * This trait is intended for handling files when parallel collections are used to do the computation.
@@ -36,15 +21,19 @@ trait FileFunctions {
   * <code>save</code> on a file will return a key that can later be used to retrieve that same file
   * later inside the <code>apply</code> method of the objective function.
   */
-trait FileSystemFunctions extends FileFunctions {
+trait LocalFileSystemFunctions  {
   private lazy val nameToAbsPath = scala.collection.mutable.Map[String, String]()
 
-  override def save(file: File): String = {
+  def saveLocally(inputPath: String): String = saveLocally(new File(inputPath))
+  def saveLocally(inputIterable: Iterable[String]): String = saveLocally(inputIterable.toIterator)
+  def saveLocally(inputIterator: Iterator[String]): String = saveLocally(FileUtil.tempFile(inputIterator))
+
+  def saveLocally(file: File): String = {
     nameToAbsPath += ((file.getName, file.getAbsolutePath))
     file.getName
   }
 
-  override def get(name: String): File = new File(nameToAbsPath(name))
+  def getLocally(name: String): File = new File(nameToAbsPath(name))
 }
 
 /**
@@ -64,13 +53,17 @@ trait FileSystemFunctions extends FileFunctions {
   * accessed from the <code>apply</code> method of the objective function as it's executing on the worker
   * through this same trait's <code>get</code> method.
   */
-trait SparkFileFunctions extends FileFunctions {
+trait SparkFileFunctions {
   val sc: SparkContext
 
-  override def save(file: File): String = {
+  def saveToSparkFiles(inputPath: String): String = saveToSparkFiles(new File(inputPath))
+  def saveToSparkFiles(inputIterable: Iterable[String]): String = saveToSparkFiles(inputIterable.toIterator)
+  def saveToSparkFiles(inputIterator: Iterator[String]): String = saveToSparkFiles(FileUtil.tempFile(inputIterator))
+
+  def saveToSparkFiles(file: File): String = {
     sc.addFile(file.getAbsolutePath)
     file.getName
   }
 
-  override def get(name: String): File = new File(SparkFiles.get(name))
+  def getFromSparkFiles(name: String): File = new File(SparkFiles.get(name))
 }

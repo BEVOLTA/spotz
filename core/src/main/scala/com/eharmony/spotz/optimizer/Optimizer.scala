@@ -103,8 +103,8 @@ trait AbstractOptimizer[P, L, S, R <: OptimizerResult[P, L]] extends Optimizer[P
   * @tparam L
   */
 trait OptimizerState[P, L] {
-  val bestPointSoFar: P
-  val bestLossSoFar: L
+  val bestPointSoFar: Option[P]
+  val bestLossSoFar: Option[L]
   val startTime: DateTime
   val currentTime: DateTime
   val trialsSoFar: Long

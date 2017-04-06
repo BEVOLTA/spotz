@@ -2,7 +2,7 @@ package com.eharmony.spotz.objective.vw
 
 import com.eharmony.spotz.Preamble.Point
 import com.eharmony.spotz.objective.Objective
-import com.eharmony.spotz.objective.vw.util.{FSVwDatasetFunctions, SparkVwDatasetFunctions, VwDatasetFunctions}
+import com.eharmony.spotz.objective.vw.util.VwDatasetFunctions
 import com.eharmony.spotz.util.{FileUtil, Logging, SparkFileUtil}
 import org.apache.spark.SparkContext
 
@@ -61,7 +61,6 @@ class SparkVwHoldoutObjective(
     vwTestSetIterator: Iterator[String],
     vwTestParamsString: Option[String])
   extends AbstractVwHoldoutObjective(vwTrainSetIterator, vwTrainParamsString, vwTestSetIterator, vwTestParamsString)
-  with SparkVwDatasetFunctions
   with Logging {
 
   def this(sc: SparkContext,
@@ -86,8 +85,7 @@ class VwHoldoutObjective(
     vwTrainParamsString: Option[String],
     vwTestSetIterator: Iterator[String],
     vwTestParamsString: Option[String])
-  extends AbstractVwHoldoutObjective(vwTrainSetIterator, vwTrainParamsString, vwTestSetIterator, vwTestParamsString)
-    with FSVwDatasetFunctions {
+  extends AbstractVwHoldoutObjective(vwTrainSetIterator, vwTrainParamsString, vwTestSetIterator, vwTestParamsString) {
 
   def this(vwTrainSetIterable: Iterable[String],
            vwTrainParamsString: Option[String],
@@ -100,7 +98,7 @@ class VwHoldoutObjective(
            vwTrainParamsString: Option[String],
            vwTestSetPath: String,
            vwTestParamsString: Option[String]) = {
-    this(FileUtil.loadFile(vwTrainSetPath), vwTrainParamsString, FileUtil.loadFile(vwTestSetPath), vwTestParamsString)
+    this(FileUtil.fileLinesIterator(vwTrainSetPath), vwTrainParamsString, FileUtil.fileLinesIterator(vwTestSetPath), vwTestParamsString)
   }
 }
 

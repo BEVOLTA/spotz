@@ -6,7 +6,7 @@ import com.eharmony.spotz.optimizer._
 import com.eharmony.spotz.optimizer.hyperparam.RandomSampler
 import com.eharmony.spotz.util.{DurationUtils, Logging}
 import org.apache.spark.SparkContext
-import org.joda.time.{DateTime, Duration}
+import org.joda.time.DateTime
 
 import scala.annotation.tailrec
 import scala.math.Ordering
@@ -61,16 +61,13 @@ abstract class RandomSearch[P, L](
                                   reducer: Reducer[(P, L)])
                                  (implicit c: ClassTag[P], p: ClassTag[L]): RandomSearchResult[P, L] = {
     val startTime = DateTime.now()
-    val firstPoint = sample(paramSpace, seed)
-    val firstLoss = objective(firstPoint)
-    val currentTime = DateTime.now()
 
-    val randomSearchContext = RandomSearchContext(
-      bestPointSoFar = firstPoint,
-      bestLossSoFar = firstLoss,
+    val randomSearchContext = RandomSearchContext[P, L](
+      bestPointSoFar = None,
+      bestLossSoFar = None,
       startTime = startTime,
-      currentTime = currentTime,
-      trialsSoFar = 1,
+      currentTime = startTime,
+      trialsSoFar = 0,
       optimizerFinished = false)
 
     randomSearch(objective, reducer, paramSpace, randomSearchContext)
@@ -97,11 +94,11 @@ abstract class RandomSearch[P, L](
 
     info(s"Best point and loss after ${rsc.trialsSoFar} trials and ${DurationUtils.format(rsc.elapsedTime)} : ${rsc.bestPointSoFar} loss: ${rsc.bestLossSoFar}")
 
-    if (stopStrategy.shouldStop(rsc)) {
+    if (stopStrategy.shouldStop(rsc) && rsc.bestPointSoFar.isDefined && rsc.bestLossSoFar.isDefined) {
       // Base case, end recursion, return the result
       new RandomSearchResult[P, L](
-        bestPoint = rsc.bestPointSoFar,
-        bestLoss = rsc.bestLossSoFar,
+        bestPoint = rsc.bestPointSoFar.get,
+        bestLoss = rsc.bestLossSoFar.get,
         startTime = rsc.startTime,
         endTime = rsc.currentTime,
         elapsedTime = rsc.elapsedTime,
@@ -111,14 +108,19 @@ abstract class RandomSearch[P, L](
       // TODO: Adaptive batch sizing
       //val batchSize = nextBatchSize(None, elapsedTime, currentBatchSize, trialsSoFar, null, stopStrategy.getMaxTrials)
 
-      val (bestPoint, bestLoss) = reducer((rsc.bestPointSoFar, rsc.bestLossSoFar),
-          bestRandomPointAndLoss(rsc.trialsSoFar, batchSize, objective, reducer, paramSpace, sample, seed))
+      val (point, loss) = bestRandomPointAndLoss(rsc.trialsSoFar, batchSize, objective, reducer, paramSpace, sample, seed)
+
+      val (bestPoint, bestLoss) =
+        if (rsc.bestPointSoFar.isDefined && rsc.bestLossSoFar.isDefined)
+          reducer((rsc.bestPointSoFar.get, rsc.bestLossSoFar.get), (point, loss))
+        else
+          (point, loss)
 
       val currentTime = DateTime.now()
 
       val randomSearchContext = RandomSearchContext(
-        bestPointSoFar = bestPoint,
-        bestLossSoFar = bestLoss,
+        bestPointSoFar = Option(bestPoint),
+        bestLossSoFar = Option(bestLoss),
         startTime = rsc.startTime,
         currentTime = currentTime,
         trialsSoFar = rsc.trialsSoFar + batchSize,
@@ -145,8 +147,8 @@ abstract class RandomSearch[P, L](
   * @tparam L loss type
   */
 case class RandomSearchContext[P, L](
-    bestPointSoFar: P,
-    bestLossSoFar: L,
+    bestPointSoFar: Option[P],
+    bestLossSoFar: Option[L],
     startTime: DateTime,
     currentTime: DateTime,
     trialsSoFar: Long,

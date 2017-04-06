@@ -56,15 +56,17 @@ case class VwResult(
 object VwProcess {
   val avgLossRegex = s"average\\s+loss\\s+=\\s+($floatingPointRegex)".r
 
-  def generateCache(inputStream: InputStream, cachePath: String, cacheParams: String) {
+  def generateCache(inputStream: InputStream, cachePath: String, cacheParams: String): VwResult = {
     val vwCacheProcess = VwProcess(s"-k --cache_file $cachePath $cacheParams", Option(inputStream))
     val vwCacheResult = vwCacheProcess()
 
     assert(vwCacheResult.exitCode == 0,
       s"VW Training cache exited with non-zero exit code ${vwCacheResult.exitCode}")
+
+    vwCacheResult
   }
 
-  def generateCache(vwDatasetIterator: Iterator[String], cachePath: String, cacheParams: String) {
+  def generateCache(vwDatasetIterator: Iterator[String], cachePath: String, cacheParams: String): VwResult = {
     val pos = new PipedOutputStream
     val pis = new PipedInputStream(pos)
     val pw = new PrintWriter(pos, true)
@@ -77,12 +79,14 @@ object VwProcess {
     generateCache(pis, cachePath, cacheParams)
   }
 
-  def generateCache(vwDatasetPath: String, cachePath: String, cacheParams: String) {
+  def generateCache(vwDatasetPath: String, cachePath: String, cacheParams: String): VwResult = {
     val vwCacheProcess = VwProcess(s"-k --cache_file $cachePath -d $vwDatasetPath $cacheParams", None)
     val vwCacheResult = vwCacheProcess()
 
     assert(vwCacheResult.exitCode == 0,
       s"VW Training cache exited with non-zero exit code ${vwCacheResult.exitCode}")
+
+    vwCacheResult
   }
 }
 

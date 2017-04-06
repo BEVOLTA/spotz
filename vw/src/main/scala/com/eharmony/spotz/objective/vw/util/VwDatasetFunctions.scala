@@ -3,7 +3,7 @@ package com.eharmony.spotz.objective.vw.util
 import java.io._
 
 import com.eharmony.spotz.objective.vw.VwProcess
-import com.eharmony.spotz.util.{FileFunctions, FileSystemFunctions, FileUtil, SparkFileFunctions}
+import com.eharmony.spotz.util.{FileUtil, LocalFileSystemFunctions, Logging}
 
 import scala.collection.mutable
 
@@ -13,25 +13,29 @@ import scala.collection.mutable
   * If Spark is not being used, ie. parallel collections are being used, then the cache file
   * is just saved locally to the file system.
   */
-trait VwDatasetFunctions extends FileFunctions {
+trait VwDatasetFunctions extends LocalFileSystemFunctions with Logging {
   def saveAsCache(vwDatasetInputStream: InputStream, vwCacheFilename: String, vwParamsMap: Map[String, _]): String = {
     val vwCacheFile = FileUtil.tempFile(vwCacheFilename)
-    VwProcess.generateCache(vwDatasetInputStream, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
-    save(vwCacheFile)
+    val vwResult = VwProcess.generateCache(vwDatasetInputStream, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
+    info(s"VW cache generation stderr ${vwResult.stderr}")
+    saveLocally(vwCacheFile)
     vwCacheFile.getName
   }
 
   def saveAsCache(vwDatasetIterator: Iterator[String], vwCacheFilename: String, vwParamsMap: Map[String, _]): String = {
-    val vwCacheFile = FileUtil.tempFile(vwCacheFilename, false)
-    VwProcess.generateCache(vwDatasetIterator, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
-    save(vwCacheFile)
+    val vwCacheFile = FileUtil.tempFile(vwCacheFilename)
+    val vwResult = VwProcess.generateCache(vwDatasetIterator, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
+    info(s"VW cache generation stderr ${vwResult.stderr}")
+
+    saveLocally(vwCacheFile)
     vwCacheFile.getName
   }
 
   def saveAsCache(vwDatasetPath: String, vwCacheFilename: String, vwParamsMap: Map[String, _]): String = {
     val vwCacheFile = FileUtil.tempFile(vwCacheFilename)
-    VwProcess.generateCache(vwDatasetPath, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
-    save(vwCacheFile)
+    val vwResult = VwProcess.generateCache(vwDatasetPath, vwCacheFile.getAbsolutePath, cacheParams(vwParamsMap))
+    info(s"VW cache generation stderr ${vwResult.stderr}")
+    saveLocally(vwCacheFile)
     vwCacheFile.getName
   }
 
@@ -47,21 +51,7 @@ trait VwDatasetFunctions extends FileFunctions {
     }
   }
 
-  def getCache(name: String): File = get(name)
-}
-
-/**
-  * Save VW Cache to file system.
-  */
-trait FSVwDatasetFunctions extends VwDatasetFunctions with FileSystemFunctions {
-  override def getCache(name: String) = get(name)
-}
-
-/**
-  * Add VW Cache to SparkContext.
-  */
-trait SparkVwDatasetFunctions extends VwDatasetFunctions with SparkFileFunctions {
-  override def getCache(name: String) = get(name)
+  def getCache(name: String): File = getLocally(name)
 }
 
 /**
@@ -69,12 +59,9 @@ trait SparkVwDatasetFunctions extends VwDatasetFunctions with SparkFileFunctions
   */
 trait VwCrossValidation extends VwDatasetFunctions {
   def kFold(inputPath: String, folds: Int, vwParamsMap: Map[String, _]): Map[Int, (String, String)] = {
-    val enumeratedVwInput = FileUtil.loadFile(inputPath)
-    kFold(enumeratedVwInput, folds, vwParamsMap)
-  }
-
-  def kFold(vwDataset: Iterable[String], folds: Int, vwParamsMap: Map[String, _]): Map[Int, (String, String)] = {
-    kFold(vwDataset.toIterator, folds, vwParamsMap)
+    val enumeratedVwInput = FileUtil.fileLinesIterator(inputPath)
+    println(s"kFold input path $inputPath")
+    kFold(enumeratedVwInput.toIterable, folds, vwParamsMap)
   }
 
   /**
@@ -99,7 +86,7 @@ trait VwCrossValidation extends VwDatasetFunctions {
     *         (trainingSetFilename, testSetFilename)
     */
   //def kFold(vwDataset: Iterator[String], folds: Int, cacheBitSize: Int, cb: Option[Int]): Map[Int, (String, String)] = {
-  def kFold(vwDataset: Iterator[String], folds: Int, vwParamsMap: Map[String, _]): Map[Int, (String, String)] = {
+  def kFold(vwDataset: Iterable[String], folds: Int, vwParamsMap: Map[String, _]): Map[Int, (String, String)] = {
     val enumeratedVwDataset = vwDataset.zipWithIndex.toList
 
     // For every fold iteration, partition the vw input such that one fold is the test set and the
